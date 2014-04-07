@@ -1,0 +1,352 @@
+---
+output: pdf_document
+---
+<!--
+%\VignetteIndexEntry{An introduction to `localsolver` library}
+%\title{An introduction to `localsolver` library}
+%\date{13/06/2014}
+%\author{WLOG Solutions}
+%\VignetteEngine{knitr::knitr}
+-->
+
+```{r include=FALSE}
+library(localsolver)
+```
+
+# Introduction
+
+The purpose of this manual is to make user familiar with the package `localsolver`, which allows for using the `LocalSolver` device to solve optimization problems by using `GNU R` environment.
+
+# Solving a 'LocalSolver' problem with `R`
+
+## Creating an `ls.problem` object
+
+The first step to solve a 'LocalSolver' problem is to create an object of class `ls.problem`. This can be done by the function `ls.problem`, which returns an object of such class.
+
+This function requires at least one argument - `model.text.lsp` - a string with model formulation in the special programming language, conected directly with the `LocalSolver` software. For more details, please visit the web site: `http://www.localsolver.com/`.
+
+The model description in the `LocalSolver` language should include the declaration of decision variables, the formulation of the constraints (in terms of model parameters) and the objective funcions to be minimized or maximized. All the objective functions or constraints whose values we would like to extract from the problem must be named.
+
+
+```{r include=FALSE}
+model <- "function model() {
+  x[i in 1..4] <- bool();
+
+  // weight constraint  
+  knapsackWeight <- sum[i in 1..nbItems](itemWeights[i] * x[i]);
+  constraint knapsackWeight <= knapsackBound;
+  
+  // maximize value
+  knapsackValue <- sum[i in 1..nbItems](itemValues[i] * x[i]);
+  maximize knapsackValue;
+}"
+
+```
+
+
+As an example, let us formulate and solve a knapsack problem. The task consists in filling a knapsack with some of four available items. Each item has its value and its weight. The overall weight of the items in the knapsack should not exceed a weight bound, called `knapsackBound`. The objective is to maximize the sum of values of the items in the knapsack, without exceeding the `knapsackBound` value with their overall weight.
+
+
+```
+model <- "function model() {
+  x[i in 1..4] <- bool();
+
+  // weight constraint
+  knapsackWeight <- sum[i in 1..nbItems](itemWeights[i] * x[i]);
+  constraint knapsackWeight <= knapsackBound;
+  
+  // maximize value
+  knapsackValue <- sum[i in 1..nbItems](itemValues[i] * x[i]);
+  maximize knapsackValue;
+}"
+```
+
+
+```{r}
+lsp <- ls.problem(model)
+lsp
+```
+
+To create an object of class `ls.problem` it is necessary that the `LocalSolver` program is installed on the computer. `LocalSolver` on installation adds its application folder to system PATH environment variable so post installation is usually available in environment. If it is not (e.g. if installed after R environment has been loaded) then it's necessary to provide path to `LocalSolver` executable under `ls.path` argument to `ls.problem` function. It is important to pass the correct file path, as  `LocalSolver` must be available (and its availability is checked) for the function to create an object of class `ls.problem`.
+
+## Changing the settings of a `ls.problem` object
+
+The object of class `ls.problem` consists of some components, which allow for building the problem gradually, until all the model settings are satisfactory for the user. Each component can be changed by a corresponding function. 
+
+Note that all the functions change an object of class `ls.problem`, returning a new one, so in order to change the problem, the user must assign the result of each function to it. For example, the command:
+
+```{r}
+set.params(lsp, lsTimeLimit=60)
+```
+
+will not change tne `lsp` object, whereas
+
+```{r}
+lsp <- set.params(lsp, lsTimeLimit=60)
+```
+
+will set the time limit of the object `lsp` to 60 seconds.
+
+### Setting solver parameters
+
+The first thing which needs to be set before solving the problem is to add some solver parameter settings. This can be done by the `set.params` function, whose parameters correspond to the following available solver parameters:
+
+- `lsTimeLimit` - the number of the seconds which will be spent to optimize the objective function (functions), or a vector of times (in seconds) assigned to each objective function. The length of the vector should correspond to the length of the number of objective functions.
+- `lsIterationLimit` - the number of iterations made to optimize the objective function (functions), or a vector of iteration numbers assigned to each objective function. The length of the vector should correspond to the length of the number of objective functions.
+- `lsTimeBetweenDisplays` - the time (in seconds) between successive displays of the information about the search (default: 1)
+- `lsSeed` - pseudo-random number generator seed (default: 0).
+- `lsNbThreads` - the number of threads over which the search is paralleled (default: 2).
+- `lsAnnealingLevel` - simulated annealing level (no annealing: 0, default: 1).
+- `lsVerbosity` - verbosity (no display: 0, default: 1).
+- `indexFromZero` - indicates whether the data and decision variables (vectors and matrices) are to be indexed from 0. If `FALSE` (default value), they will be indexed from 1. This setting may be suitable for users who are used to index arrays from 0, as they work in other programming languages where this practice is more common. It is important that the value of this parameter is consistent with the indexing from the model description.
+
+If the function is called many times on the same object, the settings are updated (the values parameters chosen, when the function is called once again, will be changed, and the parameters whose values were set before, will not be changed if they ar not called once again). 
+
+For example:
+
+```{r}
+lsp <- set.params(lsp, lsTimeLimit=60, lsIterationLimit=250)
+lsp <- set.params(lsp, lsTimeLimit=300, lsSeed=7)
+lsp
+```
+
+In this case, the value of the parameter `lsTimeLimit` has been substituted by a new one, and the argument `lsIterationLimit` has not changed.
+
+It is necessary that either time or iteration number limit is provided to solve the problem. The other parameters are not obligatory.
+
+It is also possible to reset the parameters fastly:
+
+```{r}
+lsp <- reset.lsp.params(lsp)
+lsp
+```
+
+
+### Adding output expressions
+
+Solving an optimization problem consists in maximizing or minimizing the value of some objective function or functions. However, the user may also be interested in values taken by some constraint equations or decision variables. The `localsolver` allows for choosing those of these objects (which can be commonly referred to as *output expressions*), whose values the user wants to know. Each output expression, whose value we need to extract, must be added to the problem by the function `add.output.expr`. The arguments which need to be passed to the function are the object name and dimension (or 2-or-3-dimensional vector of dimensions, in case of a matrix or an array). The default value of the object dimension is 1, so it does not have to be provided in case of parameters which are single numbers. It is important that the object names are consistent with those used in the model formulation in the `LocalSolver` language.
+
+
+```{r}
+lsp <- add.output.expr(lsp, "x", 4)
+lsp <- add.output.expr(lsp, "knapsackWeight")
+lsp <- add.output.expr(lsp, "knapsackValue")
+lsp
+```
+
+As in case of solver parameters, it is possible to clear all the output expressions by calling the `clear.output.exprs` function:
+
+```{r}
+lsp <- clear.output.exprs(lsp)
+lsp
+```
+
+
+
+```{r include = FALSE}
+lsp <- add.output.expr(lsp, "x", 4)
+lsp <- add.output.expr(lsp, "knapsackWeight")
+lsp <- add.output.expr(lsp, "knapsackValue")
+lsp <- set.params(lsp, lsTimeLimit=60, lsIterationLimit=250)
+```
+
+
+## Solving the problem
+
+Once we have defined the `LocalSolver` problem and set its parameters, we can solve it. The only thing we need to provide is an input data list.
+
+### Input data
+
+The input data for a `localsolver` problem should be provided as a named list of the parameters - coefficients of the problem constraints, which are constant. Each parameter must be of one of the following formats:
+
+- A single number or a vector of class *integer* or *numeric*
+- A matrix or an array (or 2 or 3 dimensions) of elements of class *integer* or *numeric*
+- An "array of arrays" - a list of numbers or vectors of class *numeric* or *integer*, possibly of different lengths, indexed by numbers (some of the elements may be empty), for example:
+
+```{r}
+newElement <- list()
+newElement[[1]] <- c(1,2,3.14)
+newElement[[4]] <- c(1.6,2.77, 5, 34, 1)
+newElement[[6]] <- 3
+newElement
+```
+
+In this case, the user can refer in the model to the indexes: `[1,1], [1,2], [1,3], [4,1], ..., [4,5]` and `[6,1]` of the array `newElement` (or `[0,0], [0,1], [0,2], [3,0], ..., [3,4]` and `[5,0]`, if `indexFromZero = TRUE`.)
+
+The elements of the input data list need to be indexed by their names, which should correspond to the parameter names used in the model description.
+
+It is also important that all the data types are consistent with those declared in the model description. A matrix, array or vector of elements of class *numeric* in `R` will be treated as *double* by `LocalSolver`. If the parameters are of class *integer* in `R`, they will be passed as integers to `LocalSolver`.
+
+All the parameters, to which the user refers in the model description, should be provided in the input data, and all the elements of the input data list should be used in the model.
+
+For the knapsack problem, the exemplary input data may be the following:
+
+```{r}
+data <- list(nbItems=4L, itemWeights=c(1L,2L,3L,4L), 
+             
+             itemValues=c(5,6,7,8), knapsackBound = 9L)
+```
+
+
+### Solving the problem
+
+To solve an optimization problem with `localsolver`, the function `ls.solve` needs to be called with two arguments:
+
+- an object of class `ls.problem` with appropriate settings (at least `lsTimeLimit` or `lsIterationLimit` needs to be set)
+- an input data in the format described in the section above.
+
+The function returns the list of the output expressions, which have been chosen by the `add.output.expr` function (matrices, vectors or numbers).
+
+Let us see how the function works in case of the knapsack example:
+
+```{r}
+lsp
+data
+ls.solve(lsp, data)
+```
+
+The function has returned the list of values of the output expressions we asked for: the decision vector `x`, the value of the constraint `knapsackWeight` and of the objective function `knapsackValue`. Those values correspond to the optimal solution found by the solver.
+
+# More examples
+
+## The production problem
+
+This problem consists in organizing production of 4 kinds of uncountable products. Each product requires certain production time, certain amount of raw and pre-processed materials, and its unit can be sold at a determined price. There are determined constraints for the overall materials and production times of all the products. The objective is to maximize the revenue of the produced items.
+
+```
+  model <- "function model() {
+  x[i in 1..4] <- float(0,100);
+
+  // time constraint
+  productionTime <- sum[i in 1..4](time[i] * x[i]);
+  constraint productionTime <= 200;
+  
+  // raw material constraint
+  rawMaterials <- sum[i in 1..4](materialsR[i] * x[i]);
+  constraint rawMaterials <= 300;
+
+  // pre produced material constraint
+  preMaterials <- sum[i in 1..4](materialsP[i] * x[i]);
+  constraint  preMaterials <= 500;
+
+  //maximize revenue
+  revenue <- sum[i in 1..4](price[i] * x[i]);
+  maximize revenue;
+
+}
+
+```
+
+```{r include=FALSE}
+model <- "function model() {
+  x[i in 1..4] <- float(0,100);
+
+  // time constraint
+  productionTime <- sum[i in 1..4](time[i] * x[i]);
+  constraint productionTime <= 200;
+  
+  // raw material constraint
+  rawMaterials <- sum[i in 1..4](materialsR[i] * x[i]);
+  constraint rawMaterials <= 300;
+
+  // pre produced material constraint
+  preMaterials <- sum[i in 1..4](materialsP[i] * x[i]);
+  constraint  preMaterials <= 500;
+
+  //maximize revenue
+  revenue <- sum[i in 1..4](price[i] * x[i]);
+  maximize revenue;
+
+}"
+
+```
+
+
+```{r}
+lsp <- ls.problem(model)
+lsp <- set.params(lsp, lsTimeLimit=60, lsIterationLimit=250)
+lsp <- add.output.expr(lsp, "x", 4)
+lsp <- add.output.expr(lsp, "revenue")
+lsp
+
+data <- list(time=c(5L,2L,6L,3L), materialsR=c(10L,8L,9L,7L), 
+             materialsP=c(10L,20L,25L,22L), price=c(5L,4L,6L,3L) )
+ls.solve(lsp, data)
+```
+
+
+## Mor examples
+
+The examples above have been prepared as demos for the package users. After installing the package, the full list of the demos and can be viewed by the command:
+
+```
+demo(package = 'localsolver')
+```
+
+The particular demos may be activated by calling the same command and specyfying the demo name, for instance:
+
+```
+demo(assignment, package='localsolver')
+```
+
+Note that some of the examples have more than 1000 decision variables and therefore demand the full license for the 'LocalSolver' program.
+
+# Other features
+
+## Functions in `LocalSolver` language
+
+The model formulation in the `LocalSolver` language, passed to the `ls.problem` object  requires at least the `model()` part. However, the user is free to introduce  other functions, too. In particular, it is possible to declare the `param()` function in the `LocalSolver` language (the package does not support all the possibilities connected with `LocalSolver` initial settings, such as the initial values of the decision variables). This can be followed by setting some particular solver parameters by the `set.params` function. In this case, the latter function will be called as the second one, which means that if some parameters appear in both parts, their settings in the problem will correspond to the values chosen by the `set.params` function. On the other hand, if some parameters are set by the function `param()` and the are not changed by the `set.params` function, their values will correspond to the ones provided in the `param()` part of the model formulation in the `LocalSolver` language.
+
+For example:
+
+```
+model <-
+  "function model(){
+    x[0..nbProcesses-1][0..nbMachines-1] <- bool();
+    //some model formulation
+  }
+  
+  function param(){
+    for [p in 0..nbProcesses-1][m in 0..nbMachines-1]
+      if (m == initialMachine[p]) setValue(x[p][m], true);
+      else setValue(x[p][m], false);
+    ltTimeLimit = 60;
+  }"  
+```
+
+```{r include = FALSE}
+model <-
+  "function model(){
+    x[0..nbProcesses-1][0..nbMachines-1] <- bool();
+    //some model formulation
+  }
+  
+  function param(){
+    for [p in 0..nbProcesses-1][m in 0..nbMachines-1]
+      if (m == initialMachine[p]) setValue(x[p][m], true);
+      else setValue(x[p][m], false);
+    ltTimeLimit = 60;
+  }"  
+
+```
+
+```{r}
+lsp <- ls.problem(model)
+lsp <- set.params(lsp, lsTimeLimit=300)
+lsp
+```
+
+The time limit will be overwritten by the value passed to the model by the `set.params` function during the process of solving the problem.
+
+## Changing the working directory for the package
+
+The process of solving an optimization problem in the `localsolver` package requires generating some auxiliary files which are then passed to the `LocalSolver` program. In some special cases, for example, if the user needs to call the process several times in parallel, the working directory for these auxiliary files must be changed. This can be done by the `set.temp.dir` function, for example:
+
+```{r}
+lsp <- ls.problem("function model(){ ... }")
+lsp
+lsp <- set.temp.dir(lsp, path=file.path(tempdir(), '..'))
+lsp
+```
+
+The temporary directory has been changed to the path provided to the function.

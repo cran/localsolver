@@ -1,0 +1,21 @@
+News for localsolver
+
+CHANGES IN 2.3:
+  * Changed Authors in DESCRIPTION to contain single Maintainer.
+
+CHANGES IN 2.2:
+  * Updated package DESCRIPTION to conform CRAN policy.
+  * Configured to buil bignette from source with knitr.
+
+CHANGES IN 2.1:
+  * add.decision.var removed from API as same effect can be achieved with use of output exprs.
+  * detection of objective expressions removed for the same reason
+  * model text is required to be sequence of functions
+  * new demos have been added
+
+CHANGES IN 2.0:
+  * The NEWS file has been created.
+  * Package API changed completely
+  * Demos adapted to new API.
+  * Verified that package passes all standard checks
+

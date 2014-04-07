@@ -1,0 +1,32 @@
+function model() {
+  // 0-1 decisions: 
+  // cp[c][p] = 1 if class c is at position p, and 0 otherwise
+  cp[1..nbClasses][1..nbPositions] <- bool();
+  
+  // constraints: 
+  // for each class c, no more than nbCars[c] assigned to positions
+  for [c in 1..nbClasses] 
+  constraint sum[p in 1..nbPositions](cp[c][p]) == nbCars[c];
+  
+  // constraints: one car assigned to each position p
+  for [p in 1..nbPositions] 
+  constraint sum[c in 1..nbClasses](cp[c][p]) == 1;
+  
+  // expressions: 
+  // op[o][p] = 1 if option o appears at position p, and 0 otherwise
+  op[o in 1..nbOptions][p in 1..nbPositions] <- 
+  or[c in 1..nbClasses : options[c][o]](cp[c][p]);
+  
+  // expressions: compute the number of cars in each window
+  nbCarsWindows[o in 1..nbOptions][p in 1..nbPositions-ratioDenoms[o]+1] 
+  <- sum[k in 1..ratioDenoms[o]](op[o][p+k-1]);
+  
+  // expressions: compute the number of violations in each window
+  nbViolationsWindows[o in 1..nbOptions][p in 1..nbPositions-ratioDenoms[o]+1] 
+  <- max(nbCarsWindows[o][p]-ratioNums[o], 0);
+  
+  // objective: minimize the sum of violations for all options and all windows
+  obj <- sum[o in 1..nbOptions]
+  [p in 1..nbPositions-ratioDenoms[o]+1](nbViolationsWindows[o][p]);
+  minimize obj;	
+}

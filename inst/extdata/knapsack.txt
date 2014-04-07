@@ -1,0 +1,11 @@
+function model() {
+  x[i in 1..nbItems] <- bool();
+  
+  // weight constraint
+  knapsackWeight <- sum[i in 1..nbItems](itemWeights[i] * x[i]);
+  constraint knapsackWeight <= knapsackBound;
+    
+  // maximize value
+  knapsackValue <- sum[i in 1..nbItems](itemValues[i] * x[i]);
+  maximize knapsackValue;
+}

@@ -1,0 +1,157 @@
+/** 
+ * Models the problem with 0-1 decisions. Constraints and objectives are 
+ * introduced in the same order as in the challenge subject.
+ *
+ * Notations:
+ *  x[p][m] = 1 if process p is assigned to machine m, and 0 otherwise.
+ *  u[m][r] is the consumption of resource r on machine m.
+ *  n[p] is the neighborhood of the machine assigned to process p.
+ *  a[m][r] is the unconsumed capacity of resource r on machine m.
+ *
+**/
+function model() {
+  // 0-1 decisions
+  x[0..nbProcesses-1][0..nbMachines-1] <- bool();
+  
+  // each process must be assigned to a single machine
+  for [p in 0..nbProcesses-1]
+    constraint sum[m in 0..nbMachines-1](x[p][m]) == 1;
+  
+  // capacity constraints
+  for [m in 0..nbMachines-1][r in 0..nbResources-1] {
+    u[m][r] <- sum[p in 0..nbProcesses-1](require[p][r] * x[p][m]);
+    constraint u[m][r] <= capacity[m][r];
+  }
+  
+  // conflict constraints
+  processByService[0..nbServices-1] = {}; // assigns an empty map
+  
+  for [p in 0..nbProcesses-1] {
+    s = service[p];
+    processByService[s][count(processByService[s])] = p;
+  }
+  for [s in 0..nbServices-1][m in 0..nbMachines-1]
+    constraint sum[p in processByService[s]](x[p][m]) <= 1;
+  
+  // spread constraints
+  machineByLocation[0..maxLocation] = {}; // assigns an empty map
+  
+  for [m in 0 .. nbMachines-1] {
+    l = location[m];
+    machineByLocation[l][count(machineByLocation[l])] = m;
+  }
+  for [s in 0..nbServices-1] {
+    sl[s] <- sum[l in 0..maxLocation](
+      or[p in processByService[s]][m in machineByLocation[l]](x[p][m]));
+    constraint sl[s] >= spread[s];
+  }
+  
+  // dependency constraints
+  n[p in 0..nbProcesses-1] <- 
+    sum[m in 0..nbMachines-1](neighborhood[m] * x[p][m]);  
+  for [sa in 0..nbServices-1][i in 0..nbDepends[sa]-1] {
+    sb = dependency[sa][i];
+    for[pa in processByService[sa]]
+      constraint or[pb in processByService[sb]](n[pa] == n[pb]); 
+  }
+  
+  // transient usage constraints
+  for [m in 0..nbMachines-1][r in 0..nbResources-1 : transient[r] == 1] {
+    initiallyConsumed = 0;
+    for [p in 0..nbProcesses-1 : initialMachine[p] == m] 
+      initiallyConsumed = initiallyConsumed + require[p][r];
+    residual = capacity[m][r] - initiallyConsumed;
+    constraint sum[p in 0..nbProcesses-1 : initialMachine[p] != m](
+    require[p][r] * x[p][m]) <= residual;
+  }
+  
+  // objective: load cost 
+  loadCost[r in 0..nbResources-1] <- 
+    sum[m in 0..nbMachines-1](max(u[m][r] - safety[m][r], 0)); 
+  totalLoadCost <- sum[r in 0..nbResources-1](rweight[r] * loadCost[r]);
+  
+  // objective: balance cost
+  a[m in 0..nbMachines-1][r in 0..nbResources-1] <- capacity[m][r] - u[m][r];  
+  for [b in 0..nbBalances-1] {  
+    r1 = resource1[b]; 
+    r2 = resource2[b]; 
+    tg = target[b];
+    balanceCost[b] <- 
+      sum[m in 0..nbMachines-1](max(tg * a[m][r1] - a[m][r2], 0));
+  }
+  if (nbBalances == 0) totalBalanceCost <- 0;
+  else totalBalanceCost <- 
+    sum[b in 0..nbBalances-1](bweight[b] * balanceCost[b]);
+  
+  // objective: process move cost
+  processMoveCost <- 
+    sum[p in 0..nbProcesses-1](pcost[p] * not(x[p][initialMachine[p]]));  
+  
+  // objective: service move cost  
+  for [s in 0..nbServices-1] 
+    nbMoved[s] <- sum[p in 0..nbProcesses-1 : service[p] == s](
+      not(x[p][initialMachine[p]]));
+  serviceMoveCost <- max[s in 0..nbServices-1](nbMoved[s]);
+  
+  // objective: machine move cost
+  for [p in 0..nbProcesses-1] {
+    m0 = initialMachine[p];
+    machineMoveCost[p] <- sum[m in 0..nbMachines-1 : m != m0](
+      mcost[m0][m] * x[p][m]);
+  }  
+  totalMachineMoveCost <- sum[p in 0..nbProcesses-1](machineMoveCost[p]);
+  
+  // objective: total cost
+  obj <- totalLoadCost 
+    + totalBalanceCost 
+    + wpmc * processMoveCost 
+    + wsmc * serviceMoveCost
+    + wmmc * totalMachineMoveCost;
+  
+  // Classical technique for favoring diversification of the search when the 
+  // objective value contains numerous digits. We iteratively optimize the most 
+  // significant digits, passing from millions to hundred of thousands, etc.   
+  minimize obj / 1000000;
+  minimize obj / 100000;
+  minimize obj / 10000;
+  minimize obj / 1000;
+  minimize obj;
+}
+
+/* Displays the terms composing the objective function. */
+function display() {
+  println(
+    "totalLoadCost = ", getValue(totalLoadCost), ", ", 
+    "totalBalanceCost = ", getValue(totalBalanceCost), ", ", 
+    "processMoveCost = ", getValue(processMoveCost), ", ", 
+    "serviceMoveCost = ", getValue(serviceMoveCost), ", ", 
+    "totalMachineMoveCost = ", getValue(totalMachineMoveCost));
+}
+
+/* Set lower bounds and initial solution. */
+function param() {
+  // lower bounds of surrogate objectives
+  setObjectiveBound(0, 100);
+  setObjectiveBound(1, 100);  
+  setObjectiveBound(2, 100);
+  setObjectiveBound(3, 100);      
+  setObjectiveBound(4, 0);
+  
+  if (lsTimeLimit == nil) {
+    println("Setting time limits to 150, 50, 40, 30, 30 (total: 300 sec)");
+    lsTimeLimit = {150, 50, 40, 30, 30};
+  }
+  
+  if (lsNbThreads == nil) {
+    println("Setting nbThreads to 4");
+    lsNbThreads = 4;
+  }
+
+  lsAnnealingLevel = 0; // disable simulated annealing
+  
+  // set initial values of decisions according to 
+  // the initial assignment of processes to machines  
+  for [p in 0..nbProcesses-1][m in 0..nbMachines-1]
+    if (m == initialMachine[p]) setValue(x[p][m], true);
+    else setValue(x[p][m], false);
+}

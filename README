@@ -1,0 +1,32 @@
+#----------------------------------------------------------------------------
+# localsolver
+# Copyright (c) 2014, WLOG Solutions
+#----------------------------------------------------------------------------
+
+# Introduction
+
+The localsolver package allows for solving optimization problems in R by using the LocalSolver program. 
+It combines efficiency and easiness of model formulation, which characterize the LocalSolver program, 
+with the elasticity of data in R. The model formulation in LSP language is provided by a user as a string
+or text file, and the input data - as a list. The solution is also a list, with chosen decision variables,
+constraints and objective function values. Thus the problem can be solved many times (for example, by 
+iterating with different parameter settings) and the result is provided in a form which makes further 
+processing or visualization in R fast and easy.
+
+# Installation
+
+The package installation from CRAN can be executed by the command:
+install.packages("localsolver")
+
+However, the package also requires the Local Solver program to be installed. It is highly recommended that
+the LocalSolver software is installed before the R package. 
+The test version (limited to 100 decisions and 1000 variables) can be downloaded from the website:
+http://www.localsolver.com/download.html
+The access to the trial license for full version requires contacting the LocalSolver company. For further
+information please visit the website:
+http://www.localsolver.com/
+
+# Contact
+
+Bugs and feature requests can be reported by e-mail: info@wlogsolutions.com. We are also looking forward
+for any future package development suggestions.
